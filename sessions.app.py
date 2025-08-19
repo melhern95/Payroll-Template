@@ -3,9 +3,21 @@ import pandas as pd
 import datetime
 import io
 from openpyxl.styles import PatternFill
+import os
 
 # ---------- Initial Setup ----------
-st.set_page_config(page_title="Session Tracker", layout="centered")
+st.set_page_config(page_title="Therapy Session Tracker", layout="centered")
+
+# ---------- Ask Clinician Name ----------
+st.sidebar.header("👤 Clinician Login")
+clinician_name = st.sidebar.text_input("Enter your name or initials", "")
+
+if clinician_name == "":
+    st.warning("Please enter your name or initials to continue.")
+    st.stop()
+
+# Use clinician-specific filename
+file_name = f"sessions_{clinician_name.replace(' ', '_')}.xlsx"
 
 # ---------- Aging Bucket Function ----------
 def aging_bucket(days):
@@ -18,11 +30,11 @@ def aging_bucket(days):
     else:
         return "90+ days"
 
-# ---------- Initialize DataFrame ----------
+# ---------- Load or initialize DataFrame ----------
 if "df" not in st.session_state:
-    try:
-        st.session_state.df = pd.read_excel("sessions.xlsx")
-    except FileNotFoundError:
+    if os.path.exists(file_name):
+        st.session_state.df = pd.read_excel(file_name)
+    else:
         st.session_state.df = pd.DataFrame(columns=[
             "Client Initials", "Date of Service", "CPT Code", "Session Fee",
             "Payment Received", "Date of Payment", "Outstanding",
@@ -32,7 +44,7 @@ if "df" not in st.session_state:
 df = st.session_state.df
 
 # ---------- Excel Export with Color ----------
-def export_colored_excel(df, file_name="sessions.xlsx"):
+def export_colored_excel(df, file_name):
     with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Sessions")
         ws = writer.sheets["Sessions"]
@@ -60,7 +72,7 @@ def export_colored_excel(df, file_name="sessions.xlsx"):
                     cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
 
 # ---------- Input Form ----------
-st.title("📊 Therapy Session Tracker")
+st.title(f"📊 Therapy Session Tracker ({clinician_name})")
 
 with st.form("session_entry"):
     client_initials = st.text_input("Client Initials")
@@ -100,7 +112,7 @@ if submitted:
 
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     st.session_state.df = df
-    export_colored_excel(df)
+    export_colored_excel(df, file_name)
     st.success("✅ Session added and saved!")
 
 # ---------- Edit Existing Session ----------
@@ -132,7 +144,7 @@ if not df.empty:
                     value=pd.to_datetime(df.at[row_to_edit, "Date of Payment"]) if not pd.isna(df.at[row_to_edit, "Date of Payment"]) else datetime.date.today()
                 )
 
-            # Submit button for edit form
+            # Submit button
             save_edit = st.form_submit_button("Save Changes")
 
             if save_edit:
@@ -142,7 +154,6 @@ if not df.empty:
                 df.at[row_to_edit, "Session Fee"] = fee_edit
                 df.at[row_to_edit, "Payment Received"] = payment_edit
                 df.at[row_to_edit, "Date of Payment"] = pd.to_datetime(date_payment_edit) if date_payment_edit else pd.NaT
-                # Recalculate Outstanding, Days Outstanding, Aging Bucket
                 df.at[row_to_edit, "Outstanding"] = df.at[row_to_edit, "Session Fee"] - df.at[row_to_edit, "Payment Received"]
                 if unpaid_edit or not date_payment_edit:
                     df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Service"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
@@ -150,10 +161,10 @@ if not df.empty:
                     df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Payment"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
                 df.at[row_to_edit, "Aging Bucket"] = aging_bucket(df.at[row_to_edit, "Days Outstanding"]) if df.at[row_to_edit, "Outstanding"]>0 else "Paid"
                 st.session_state.df = df
-                export_colored_excel(df)
+                export_colored_excel(df, file_name)
                 st.success("✅ Session updated and saved!")
 
-# ---------- Ensure proper datetime for Streamlit ----------
+# ---------- Ensure proper datetime ----------
 for col in ["Date of Service", "Date of Payment"]:
     if col in df.columns:
         df[col] = pd.to_datetime(df[col], errors="coerce")
@@ -178,11 +189,12 @@ if not df.empty:
 
 # ---------- Download Excel ----------
 st.subheader("⬇️ Download Data")
-export_colored_excel(df, file_name="sessions.xlsx")
-with open("sessions.xlsx", "rb") as f:
+export_colored_excel(df, file_name)
+with open(file_name, "rb") as f:
     st.download_button(
         label="📥 Download Excel with Colors",
         data=f,
-        file_name="sessions.xlsx",
+        file_name=file_name,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
