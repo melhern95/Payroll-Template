@@ -132,7 +132,7 @@ if not df.empty:
                     value=pd.to_datetime(df.at[row_to_edit, "Date of Payment"]) if not pd.isna(df.at[row_to_edit, "Date of Payment"]) else datetime.date.today()
                 )
 
-            # ✅ Submit button for edit form
+            # Submit button for edit form
             save_edit = st.form_submit_button("Save Changes")
 
             if save_edit:
@@ -152,6 +152,11 @@ if not df.empty:
                 st.session_state.df = df
                 export_colored_excel(df)
                 st.success("✅ Session updated and saved!")
+
+# ---------- Ensure proper datetime for Streamlit ----------
+for col in ["Date of Service", "Date of Payment"]:
+    if col in df.columns:
+        df[col] = pd.to_datetime(df[col], errors="coerce")
 
 # ---------- Display Data ----------
 st.subheader("📋 All Sessions")
@@ -173,8 +178,7 @@ if not df.empty:
 
 # ---------- Download Excel ----------
 st.subheader("⬇️ Download Data")
-output = io.BytesIO()
-export_colored_excel(df, file_name="sessions.xlsx")  # write locally
+export_colored_excel(df, file_name="sessions.xlsx")
 with open("sessions.xlsx", "rb") as f:
     st.download_button(
         label="📥 Download Excel with Colors",
