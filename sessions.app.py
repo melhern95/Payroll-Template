@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import datetime
+import os
 import io
 from openpyxl.styles import PatternFill
 
@@ -30,32 +31,27 @@ if st.session_state.clinician is None:
             st.warning("Please enter a name to continue.")
         else:
             st.session_state.clinician = clinician_input.strip()
-            st.success(f"Welcome, {st.session_state.clinician}!")
-            st.experimental_rerun()  # reload app with clinician set
 else:
     clinician = st.session_state.clinician
+    st.title(f"📊 Therapy Session Tracker — Clinician: {clinician}")
 
-    # ---------- Initialize in-memory DataFrame ----------
+    # ---------- File path per clinician ----------
+    file_name = f"sessions_{clinician.replace(' ','_')}.xlsx"
+
+    # ---------- Load existing data if exists ----------
     if "df" not in st.session_state:
-        st.session_state.df = pd.DataFrame(columns=[
-            "Clinician", "Client Initials", "Date of Service", "CPT Code", "Session Fee",
-            "Payment Received", "Date of Payment", "Outstanding",
-            "Days Outstanding", "Aging Bucket"
-        ])
+        if os.path.exists(file_name):
+            df = pd.read_excel(file_name, parse_dates=["Date of Service", "Date of Payment"])
+            st.session_state.df = df
+        else:
+            st.session_state.df = pd.DataFrame(columns=[
+                "Clinician", "Client Initials", "Date of Service", "CPT Code", "Session Fee",
+                "Payment Received", "Date of Payment", "Outstanding",
+                "Days Outstanding", "Aging Bucket"
+            ])
     df = st.session_state.df
 
-    # ---------- Clear Session Data ----------
-    if not df.empty:
-        if st.button("🗑️ Clear All Session Data"):
-            st.session_state.df = pd.DataFrame(columns=df.columns)
-            st.success("✅ All in-browser session data cleared!")
-
-    # ---------- Warning for unsaved data ----------
-    if not df.empty:
-        st.warning("⚠️ You have unsaved session data in this browser session. "
-                   "Make sure to download your Excel file before closing or refreshing!")
-
-    # ---------- Excel Export with Color ----------
+    # ---------- Aging Summary Export ----------
     def export_colored_excel(df):
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -86,16 +82,14 @@ else:
         output.seek(0)
         return output
 
-    # ---------- Input Form ----------
-    st.title(f"📊 Therapy Session Tracker — Clinician: {clinician}")
-
+    # ---------- Add New Session ----------
+    st.subheader("➕ Add New Session")
     with st.form("session_entry"):
         client_initials = st.text_input("Client Initials")
         date_of_service = st.date_input("Date of Service", datetime.date.today())
         cpt_code = st.selectbox("CPT Code", ["90837", "90791"])
         session_fee = st.number_input("Session Fee ($)", min_value=0.0, step=10.0)
         payment_received = st.number_input("Payment Received ($)", min_value=0.0, step=10.0)
-
         unpaid = st.checkbox("Unpaid?")
         if unpaid:
             date_of_payment = None
@@ -110,7 +104,6 @@ else:
             days_outstanding = (datetime.date.today() - date_of_service).days if outstanding > 0 else 0
         else:
             days_outstanding = (datetime.date.today() - date_of_payment).days if outstanding > 0 else 0
-
         bucket = aging_bucket(days_outstanding) if outstanding > 0 else "Paid"
 
         new_row = {
@@ -128,7 +121,8 @@ else:
 
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         st.session_state.df = df
-        st.success("✅ Session added (in-browser memory)")
+        df.to_excel(file_name, index=False)  # Auto-save
+        st.success(f"✅ Session added and saved for {clinician}!")
 
     # ---------- Edit Existing Session ----------
     if not df.empty:
@@ -138,17 +132,11 @@ else:
             with st.sidebar.form("edit_form"):
                 client_edit = st.text_input("Client Initials", value=df.at[row_to_edit, "Client Initials"])
                 date_edit = st.date_input("Date of Service", value=pd.to_datetime(df.at[row_to_edit, "Date of Service"]))
-
                 cpt_options = ["90837", "90791"]
-                try:
-                    default_index = cpt_options.index(df.at[row_to_edit, "CPT Code"])
-                except ValueError:
-                    default_index = 0
+                default_index = cpt_options.index(df.at[row_to_edit, "CPT Code"]) if df.at[row_to_edit, "CPT Code"] in cpt_options else 0
                 cpt_edit = st.selectbox("CPT Code", cpt_options, index=default_index)
-
                 fee_edit = st.number_input("Session Fee ($)", min_value=0.0, value=float(df.at[row_to_edit, "Session Fee"]), step=1.0)
                 payment_edit = st.number_input("Payment Received ($)", min_value=0.0, value=float(df.at[row_to_edit, "Payment Received"]), step=1.0)
-
                 unpaid_edit = st.checkbox("Unpaid?", value=df.at[row_to_edit, "Outstanding"]>0 and pd.isna(df.at[row_to_edit,"Date of Payment"]))
                 if unpaid_edit:
                     date_payment_edit = None
@@ -157,7 +145,6 @@ else:
                         "Date of Payment (optional)",
                         value=pd.to_datetime(df.at[row_to_edit, "Date of Payment"]) if not pd.isna(df.at[row_to_edit, "Date of Payment"]) else datetime.date.today()
                     )
-
                 save_edit = st.form_submit_button("Save Changes")
 
                 if save_edit:
@@ -174,21 +161,17 @@ else:
                         df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Payment"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
                     df.at[row_to_edit, "Aging Bucket"] = aging_bucket(df.at[row_to_edit, "Days Outstanding"]) if df.at[row_to_edit, "Outstanding"]>0 else "Paid"
                     st.session_state.df = df
-                    st.success("✅ Session updated (in-browser memory)")
-
-    # ---------- Ensure proper datetime ----------
-    for col in ["Date of Service", "Date of Payment"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
+                    df.to_excel(file_name, index=False)  # Auto-save
+                    st.success("✅ Session updated and saved!")
 
     # ---------- Display Data ----------
     st.subheader("📋 All Sessions")
-    st.dataframe(df[df["Clinician"]==clinician], use_container_width=True)
+    st.dataframe(df, use_container_width=True)
 
     # ---------- Aging Summary ----------
     if not df.empty:
         st.subheader("📊 Aging Summary")
-        summary = df[df["Clinician"]==clinician].groupby("Aging Bucket")["Outstanding"].sum().reset_index()
+        summary = df.groupby("Aging Bucket")["Outstanding"].sum().reset_index()
         color_map = {
             "0-30 days": "🟩",
             "31-60 days": "🟨",
@@ -202,10 +185,10 @@ else:
     # ---------- Download Excel ----------
     if not df.empty:
         st.subheader("⬇️ Download Data")
-        excel_bytes = export_colored_excel(df[df["Clinician"]==clinician])
+        excel_bytes = export_colored_excel(df)
         st.download_button(
             label="📥 Download Excel with Colors",
             data=excel_bytes,
-            file_name=f"sessions_{clinician.replace(' ','_')}.xlsx",
+            file_name=file_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
