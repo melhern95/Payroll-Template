@@ -1,96 +1,99 @@
-import pandas as pd
-from datetime import datetime
 import streamlit as st
+import pandas as pd
+import datetime
+import io
 
-# --- Config ---
-excel_file = "sessions.xlsx"
-cpt_fees = {
-    "90837": 200,  # Fee for 90837
-    "90791": 150   # Fee for 90791
-}
+# ---------- Initial Setup ----------
+st.set_page_config(page_title="Session Tracker", layout="centered")
 
-# --- Load or create dataframe ---
-try:
-    df = pd.read_excel(excel_file)
-except FileNotFoundError:
-    df = pd.DataFrame(columns=[
-        "Client", "Date of Session", "CPT Code", "Session Fee",
-        "Payment Received", "Date of Payment", "Outstanding",
-        "Days Outstanding", "Aging Bucket"
+# Aging bucket function
+def aging_bucket(days):
+    if days <= 30:
+        return "0-30 days"
+    elif days <= 60:
+        return "31-60 days"
+    elif days <= 90:
+        return "61-90 days"
+    else:
+        return "90+ days"
+
+# Initialize session state DataFrame if not already there
+if "df" not in st.session_state:
+    st.session_state.df = pd.DataFrame(columns=[
+        "Date of Service", "CPT Code", "Session Fee",
+        "Payment Received", "Date of Payment",
+        "Outstanding", "Days Outstanding", "Aging Bucket"
     ])
 
-# --- Helper functions ---
-def calculate_outstanding(row):
-    return max(row["Session Fee"] - row.get("Payment Received", 0), 0)
+# Shortcut
+df = st.session_state.df
 
-def calculate_days_outstanding(row):
-    if pd.isna(row.get("Date of Payment")):
-        days = (datetime.now() - pd.to_datetime(row["Date of Session"])).days
-        return days
-    return 0
+# ---------- Input Form ----------
+st.title("📊 Therapy Session Tracker")
 
-def assign_aging_bucket(days):
-    if days == 0:
-        return "Paid"
-    elif days <= 30:
-        return "0-30"
-    elif days <= 60:
-        return "31-60"
-    elif days <= 90:
-        return "61-90"
-    else:
-        return "90+"
-
-bucket_colors = {
-    "Paid": "✅",
-    "0-30": "🟡",
-    "31-60": "🟠",
-    "61-90": "🟣",
-    "90+": "🔴"
-}
-
-# --- Streamlit UI ---
-st.title("📊 Therapy Sessions Tracker")
-
-st.sidebar.header("➕ Add a New Session")
-
-with st.sidebar.form("session_form", clear_on_submit=True):
-    client = st.text_input("Client Name")
-    date_session = st.date_input("Date of Session")
+with st.form("session_entry"):
+    date_of_service = st.date_input("Date of Service", datetime.date.today())
     cpt_code = st.selectbox("CPT Code", ["90837", "90791"])
-    payment_received = st.number_input("Payment Received", min_value=0.0, value=0.0, step=1.0)
-    date_payment = st.date_input("Date of Payment (optional)", value=None)
+    session_fee = st.number_input("Session Fee ($)", min_value=0.0, step=10.0)
+    payment_received = st.number_input("Payment Received ($)", min_value=0.0, step=10.0)
+    date_of_payment = st.date_input("Date of Payment (leave today if unpaid)", datetime.date.today())
+    
+    submitted = st.form_submit_button("Add Session")
 
-    if st.form_submit_button("Add Session"):
-        session_fee = cpt_fees[cpt_code]
-        new_row = pd.DataFrame([{
-            "Client": client,
-            "Date of Session": pd.to_datetime(date_session),
-            "CPT Code": cpt_code,
-            "Session Fee": session_fee,
-            "Payment Received": payment_received,
-            "Date of Payment": pd.to_datetime(date_payment) if date_payment else pd.NaT
-        }])
-        df = pd.concat([df, new_row], ignore_index=True)
-        st.success("✅ Session added!")
+if submitted:
+    outstanding = session_fee - payment_received
+    days_outstanding = (datetime.date.today() - date_of_payment).days if outstanding > 0 else 0
+    bucket = aging_bucket(days_outstanding) if outstanding > 0 else "Paid"
 
-# --- Calculations ---
+    new_row = {
+        "Date of Service": date_of_service,
+        "CPT Code": cpt_code,
+        "Session Fee": session_fee,
+        "Payment Received": payment_received,
+        "Date of Payment": date_of_payment,
+        "Outstanding": outstanding,
+        "Days Outstanding": days_outstanding,
+        "Aging Bucket": bucket
+    }
+
+    # Add row to DataFrame
+    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    st.session_state.df = df  # update stored dataframe
+
+    # Auto-save to Excel (local)
+    df.to_excel("sessions.xlsx", index=False)
+
+    st.success("✅ Session added and saved!")
+
+# ---------- Display Data ----------
+st.subheader("📋 All Sessions")
+st.dataframe(df, use_container_width=True)
+
+# ---------- Aging Summary ----------
 if not df.empty:
-    df["Outstanding"] = df.apply(calculate_outstanding, axis=1)
-    df["Days Outstanding"] = df.apply(calculate_days_outstanding, axis=1)
-    df["Aging Bucket"] = df["Days Outstanding"].apply(assign_aging_bucket)
+    st.subheader("📊 Aging Summary")
 
-    # Save to Excel
-    df.to_excel(excel_file, index=False)
-
-    # Show full table
-    st.subheader("📑 Sessions Data")
-    st.dataframe(df)
-
-    # Show summary
-    st.subheader("📌 Aging Summary")
     summary = df.groupby("Aging Bucket")["Outstanding"].sum().reset_index()
-    summary["Bucket (with color)"] = summary["Aging Bucket"].map(bucket_colors) + " " + summary["Aging Bucket"]
-    st.table(summary[["Bucket (with color)", "Outstanding"]])
-else:
-    st.info("No sessions yet. Add one using the sidebar ➡️")
+
+    # Add colors for buckets
+    color_map = {
+        "0-30 days": "🟩",
+        "31-60 days": "🟨",
+        "61-90 days": "🟧",
+        "90+ days": "🟥",
+        "Paid": "✅"
+    }
+    summary["Status"] = summary["Aging Bucket"].map(color_map)
+
+    st.table(summary[["Status", "Aging Bucket", "Outstanding"]])
+
+# ---------- Download Excel ----------
+st.subheader("⬇️ Download Data")
+output = io.BytesIO()
+df.to_excel(output, index=False, engine="openpyxl")
+st.download_button(
+    label="📥 Download Excel file",
+    data=output.getvalue(),
+    file_name="sessions.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
