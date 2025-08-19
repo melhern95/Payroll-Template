@@ -45,12 +45,11 @@ else:
 
     # ---------- Clear Sheet ----------
     st.subheader("🗑️ Clear Sheet")
-    if st.button("Clear All Session Data"):
-        confirm_clear = st.checkbox("Confirm: Delete ALL my session data?")
-        if confirm_clear:
-            st.session_state.df = pd.DataFrame(columns=df.columns)  # reset in-memory df
-            df = st.session_state.df
-            st.success("✅ All session data cleared!")
+    confirm_clear = st.checkbox("Confirm: Delete ALL my session data?")
+    if st.button("Clear All Session Data") and confirm_clear:
+        st.session_state.df = pd.DataFrame(columns=df.columns)  # reset in-memory df
+        df = st.session_state.df
+        st.success("✅ All session data cleared!")
 
     # ---------- Aging Summary Export Function ----------
     def export_colored_excel(df):
@@ -199,4 +198,3 @@ else:
             file_name=download_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
