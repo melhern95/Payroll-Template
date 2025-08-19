@@ -30,10 +30,11 @@ df = st.session_state.df
 
 # ---------- Clear Session Data ----------
 if not df.empty:
-    if st.button("🗑️ Clear All Session Data"):
+    clear_clicked = st.button("🗑️ Clear All Session Data")
+    if clear_clicked:
         st.session_state.df = pd.DataFrame(columns=df.columns)
         st.success("✅ All in-browser session data cleared!")
-        st.experimental_rerun()  # Refresh to show empty state
+        st.experimental_rerun()  # Only called when button is clicked
 
 # ---------- Warning if unsaved data exists ----------
 if not df.empty:
@@ -193,4 +194,3 @@ if not df.empty:
         file_name="sessions.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
