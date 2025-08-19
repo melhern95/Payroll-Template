@@ -31,15 +31,6 @@ if "df" not in st.session_state:
 
 df = st.session_state.df
 
-# ---------- Helper Functions ----------
-def calculate_outstanding(row):
-    return max(row["Session Fee"] - row.get("Payment Received", 0), 0)
-
-def calculate_days_outstanding(row):
-    if row["Outstanding"] > 0:
-        return (datetime.date.today() - row["Date of Payment"].date()).days
-    return 0
-
 # ---------- Excel Export with Color ----------
 def export_colored_excel(df, file_name="sessions.xlsx"):
     with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
@@ -67,8 +58,7 @@ def export_colored_excel(df, file_name="sessions.xlsx"):
                 fill_color = color_map.get(cell.value, None)
                 if fill_color:
                     cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
-        
-        writer.save()
+    # ✅ No writer.save() needed
 
 # ---------- Input Form ----------
 st.title("📊 Therapy Session Tracker")
