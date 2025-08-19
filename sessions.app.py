@@ -18,10 +18,10 @@ def aging_bucket(days):
     else:
         return "90+ days"
 
-# ---------- Initialize in-memory DataFrame in session_state ----------
+# ---------- Initialize in-memory DataFrame ----------
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=[
-        "Client Initials", "Date of Service", "CPT Code", "Session Fee",
+        "Clinician", "Client Initials", "Date of Service", "CPT Code", "Session Fee",
         "Payment Received", "Date of Payment", "Outstanding",
         "Days Outstanding", "Aging Bucket"
     ])
@@ -30,13 +30,11 @@ df = st.session_state.df
 
 # ---------- Clear Session Data ----------
 if not df.empty:
-    clear_clicked = st.button("🗑️ Clear All Session Data")
-    if clear_clicked:
+    if st.button("🗑️ Clear All Session Data"):
         st.session_state.df = pd.DataFrame(columns=df.columns)
         st.success("✅ All in-browser session data cleared!")
-        st.experimental_rerun()  # Only called when button is clicked
 
-# ---------- Warning if unsaved data exists ----------
+# ---------- Warning for unsaved data ----------
 if not df.empty:
     st.warning("⚠️ You have unsaved session data in this browser session. "
                "Make sure to download your Excel file before closing or refreshing!")
@@ -76,6 +74,7 @@ def export_colored_excel(df):
 st.title("📊 Therapy Session Tracker (Persistent in-browser)")
 
 with st.form("session_entry"):
+    clinician = st.text_input("Clinician Name")
     client_initials = st.text_input("Client Initials")
     date_of_service = st.date_input("Date of Service", datetime.date.today())
     cpt_code = st.selectbox("CPT Code", ["90837", "90791"])
@@ -100,6 +99,7 @@ if submitted:
     bucket = aging_bucket(days_outstanding) if outstanding > 0 else "Paid"
 
     new_row = {
+        "Clinician": clinician,
         "Client Initials": client_initials,
         "Date of Service": date_of_service,
         "CPT Code": cpt_code,
@@ -112,7 +112,7 @@ if submitted:
     }
 
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    st.session_state.df = df  # persists in browser session
+    st.session_state.df = df
     st.success("✅ Session added (in-browser memory)")
 
 # ---------- Edit Existing Session ----------
@@ -121,6 +121,7 @@ if not df.empty:
     row_to_edit = st.sidebar.selectbox("Select row to edit (by index)", df.index.tolist())
     if row_to_edit is not None:
         with st.sidebar.form("edit_form"):
+            clinician_edit = st.text_input("Clinician Name", value=df.at[row_to_edit, "Clinician"])
             client_edit = st.text_input("Client Initials", value=df.at[row_to_edit, "Client Initials"])
             date_edit = st.date_input("Date of Service", value=pd.to_datetime(df.at[row_to_edit, "Date of Service"]))
 
@@ -146,6 +147,7 @@ if not df.empty:
             save_edit = st.form_submit_button("Save Changes")
 
             if save_edit:
+                df.at[row_to_edit, "Clinician"] = clinician_edit
                 df.at[row_to_edit, "Client Initials"] = client_edit
                 df.at[row_to_edit, "Date of Service"] = pd.to_datetime(date_edit)
                 df.at[row_to_edit, "CPT Code"] = cpt_edit
