@@ -1,25 +1,25 @@
 import pandas as pd
 from datetime import datetime
-from colorama import Fore, Style, init
+import streamlit as st
 
-# Initialize colorama
-init(autoreset=True)
-
-# --- Configuration ---
-excel_file = "sessions.xlsx"  # Excel file to save at the end
+# --- Config ---
+excel_file = "sessions.xlsx"
 cpt_fees = {
-    "90837": 200,  # Example fee for 90837
-    "90791": 150   # Example fee for 90791
+    "90837": 200,  # Fee for 90837
+    "90791": 150   # Fee for 90791
 }
 
-# --- Create empty DataFrame ---
-df = pd.DataFrame(columns=[
-    "Client", "Date of Session", "CPT Code", "Session Fee",
-    "Payment Received", "Date of Payment", "Outstanding",
-    "Days Outstanding", "Aging Bucket"
-])
+# --- Load or create dataframe ---
+try:
+    df = pd.read_excel(excel_file)
+except FileNotFoundError:
+    df = pd.DataFrame(columns=[
+        "Client", "Date of Session", "CPT Code", "Session Fee",
+        "Payment Received", "Date of Payment", "Outstanding",
+        "Days Outstanding", "Aging Bucket"
+    ])
 
-# --- Helper Functions ---
+# --- Helper functions ---
 def calculate_outstanding(row):
     return max(row["Session Fee"] - row.get("Payment Received", 0), 0)
 
@@ -41,64 +41,55 @@ def assign_aging_bucket(days):
     else:
         return "90+"
 
-def colorize_bucket(bucket):
-    colors = {
-        "Paid": Fore.GREEN,
-        "0-30": Fore.YELLOW,
-        "31-60": Fore.LIGHTYELLOW_EX,
-        "61-90": Fore.MAGENTA,
-        "90+": Fore.RED
-    }
-    return f"{colors.get(bucket, Fore.WHITE)}{bucket}{Style.RESET_ALL}"
+bucket_colors = {
+    "Paid": "✅",
+    "0-30": "🟡",
+    "31-60": "🟠",
+    "61-90": "🟣",
+    "90+": "🔴"
+}
 
-# --- Interactive Entry ---
-while True:
-    add_entry = input("Do you want to add a new session entry? (y/n): ").lower()
-    if add_entry != "y":
-        break
-    
-    client = input("Client Name: ")
-    date_session = input("Date of Session (YYYY-MM-DD): ")
-    
-    # Force CPT to be either 90837 or 90791
-    while True:
-        cpt_code = input("CPT Code (90837 / 90791): ")
-        if cpt_code in cpt_fees:
-            break
-        print("Invalid CPT code. Please enter 90837 or 90791.")
-    
-    payment_received = input("Payment Received (leave blank if none): ")
-    payment_received = float(payment_received) if payment_received else 0
-    date_payment = input("Date of Payment (leave blank if none, YYYY-MM-DD): ")
-    date_payment = pd.to_datetime(date_payment) if date_payment else pd.NaT
-    
-    session_fee = cpt_fees[cpt_code]
-    
-    new_row = {
-        "Client": client,
-        "Date of Session": pd.to_datetime(date_session),
-        "CPT Code": cpt_code,
-        "Session Fee": session_fee,
-        "Payment Received": payment_received,
-        "Date of Payment": date_payment
-    }
-    
-    df = df.append(new_row, ignore_index=True)
+# --- Streamlit UI ---
+st.title("📊 Therapy Sessions Tracker")
 
-# --- Calculate Outstanding, Days Outstanding, Aging ---
-df["Outstanding"] = df.apply(calculate_outstanding, axis=1)
-df["Days Outstanding"] = df.apply(calculate_days_outstanding, axis=1)
-df["Aging Bucket"] = df["Days Outstanding"].apply(assign_aging_bucket)
+st.sidebar.header("➕ Add a New Session")
 
-# --- Save Excel ---
-df.to_excel(excel_file, index=False)
-print(f"\nExcel file saved as {excel_file}")
+with st.sidebar.form("session_form", clear_on_submit=True):
+    client = st.text_input("Client Name")
+    date_session = st.date_input("Date of Session")
+    cpt_code = st.selectbox("CPT Code", ["90837", "90791"])
+    payment_received = st.number_input("Payment Received", min_value=0.0, value=0.0, step=1.0)
+    date_payment = st.date_input("Date of Payment (leave empty if none)", value=None, min_value=None)
+    if st.form_submit_button("Add Session"):
+        session_fee = cpt_fees[cpt_code]
+        new_row = {
+            "Client": client,
+            "Date of Session": pd.to_datetime(date_session),
+            "CPT Code": cpt_code,
+            "Session Fee": session_fee,
+            "Payment Received": payment_received,
+            "Date of Payment": pd.to_datetime(date_payment) if date_payment else pd.NaT
+        }
+        df = df.append(new_row, ignore_index=True)
+        st.success("✅ Session added!")
 
-# --- Show Aging Summary ---
-print("\nAging Summary:")
-for _, row in df.iterrows():
-    client = row["Client"]
-    outstanding = row["Outstanding"]
-    bucket = row["Aging Bucket"]
-    colored_bucket = colorize_bucket(bucket)
-    print(f"{client}: ${outstanding:.2f} - {colored_bucket}")
+# --- Calculations ---
+if not df.empty:
+    df["Outstanding"] = df.apply(calculate_outstanding, axis=1)
+    df["Days Outstanding"] = df.apply(calculate_days_outstanding, axis=1)
+    df["Aging Bucket"] = df["Days Outstanding"].apply(assign_aging_bucket)
+
+    # Save to Excel
+    df.to_excel(excel_file, index=False)
+
+    # Show full table
+    st.subheader("📑 Sessions Data")
+    st.dataframe(df)
+
+    # Show summary
+    st.subheader("📌 Aging Summary")
+    summary = df.groupby("Aging Bucket")["Outstanding"].sum().reset_index()
+    summary["Bucket (with color)"] = summary["Aging Bucket"].map(bucket_colors) + " " + summary["Aging Bucket"]
+    st.table(summary[["Bucket (with color)", "Outstanding"]])
+else:
+    st.info("No sessions yet. Add one using the sidebar ➡️")
