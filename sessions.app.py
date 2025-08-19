@@ -20,9 +20,9 @@ def aging_bucket(days):
 # Initialize session state DataFrame if not already there
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame(columns=[
-        "Date of Service", "CPT Code", "Session Fee",
-        "Payment Received", "Date of Payment",
-        "Outstanding", "Days Outstanding", "Aging Bucket"
+        "Client Initials", "Date of Service", "CPT Code", "Session Fee",
+        "Payment Received", "Date of Payment", "Outstanding",
+        "Days Outstanding", "Aging Bucket"
     ])
 
 # Shortcut
@@ -32,6 +32,7 @@ df = st.session_state.df
 st.title("📊 Therapy Session Tracker")
 
 with st.form("session_entry"):
+    client_initials = st.text_input("Client Initials")
     date_of_service = st.date_input("Date of Service", datetime.date.today())
     cpt_code = st.selectbox("CPT Code", ["90837", "90791"])
     session_fee = st.number_input("Session Fee ($)", min_value=0.0, step=10.0)
@@ -46,6 +47,7 @@ if submitted:
     bucket = aging_bucket(days_outstanding) if outstanding > 0 else "Paid"
 
     new_row = {
+        "Client Initials": client_initials,
         "Date of Service": date_of_service,
         "CPT Code": cpt_code,
         "Session Fee": session_fee,
