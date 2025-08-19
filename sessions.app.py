@@ -59,19 +59,21 @@ with st.sidebar.form("session_form", clear_on_submit=True):
     date_session = st.date_input("Date of Session")
     cpt_code = st.selectbox("CPT Code", ["90837", "90791"])
     payment_received = st.number_input("Payment Received", min_value=0.0, value=0.0, step=1.0)
-    date_payment = st.date_input("Date of Payment (leave empty if none)", value=None, min_value=None)
+    date_payment = st.date_input("Date of Payment (optional)", value=None)
+
     if st.form_submit_button("Add Session"):
-    session_fee = cpt_fees[cpt_code]
-    new_row = pd.DataFrame([{
-        "Client": client,
-        "Date of Session": pd.to_datetime(date_session),
-        "CPT Code": cpt_code,
-        "Session Fee": session_fee,
-        "Payment Received": payment_received,
-        "Date of Payment": pd.to_datetime(date_payment) if date_payment else pd.NaT
-    }])
-    df = pd.concat([df, new_row], ignore_index=True)
-    st.success("✅ Session added!")
+        session_fee = cpt_fees[cpt_code]
+        new_row = pd.DataFrame([{
+            "Client": client,
+            "Date of Session": pd.to_datetime(date_session),
+            "CPT Code": cpt_code,
+            "Session Fee": session_fee,
+            "Payment Received": payment_received,
+            "Date of Payment": pd.to_datetime(date_payment) if date_payment else pd.NaT
+        }])
+        df = pd.concat([df, new_row], ignore_index=True)
+        st.success("✅ Session added!")
+
 # --- Calculations ---
 if not df.empty:
     df["Outstanding"] = df.apply(calculate_outstanding, axis=1)
