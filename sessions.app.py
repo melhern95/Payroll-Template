@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import datetime
-import os
 import io
 from openpyxl.styles import PatternFill
 
@@ -35,23 +34,16 @@ else:
     clinician = st.session_state.clinician
     st.title(f"📊 Therapy Session Tracker — Clinician: {clinician}")
 
-    # ---------- File path per clinician ----------
-    file_name = f"sessions_{clinician.replace(' ','_')}.xlsx"
-
-    # ---------- Load existing data if exists ----------
+    # ---------- Initialize In-Memory DataFrame ----------
     if "df" not in st.session_state:
-        if os.path.exists(file_name):
-            df = pd.read_excel(file_name, parse_dates=["Date of Service", "Date of Payment"])
-            st.session_state.df = df
-        else:
-            st.session_state.df = pd.DataFrame(columns=[
-                "Clinician", "Client Initials", "Date of Service", "CPT Code", "Session Fee",
-                "Payment Received", "Date of Payment", "Outstanding",
-                "Days Outstanding", "Aging Bucket"
-            ])
+        st.session_state.df = pd.DataFrame(columns=[
+            "Clinician", "Client Initials", "Date of Service", "CPT Code", "Session Fee",
+            "Payment Received", "Date of Payment", "Outstanding",
+            "Days Outstanding", "Aging Bucket"
+        ])
     df = st.session_state.df
 
-    # ---------- Aging Summary Export ----------
+    # ---------- Aging Summary Export Function ----------
     def export_colored_excel(df):
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -121,8 +113,7 @@ else:
 
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         st.session_state.df = df
-        df.to_excel(file_name, index=False)  # Auto-save
-        st.success(f"✅ Session added and saved for {clinician}!")
+        st.success(f"✅ Session added for {clinician}!")
 
     # ---------- Edit Existing Session ----------
     if not df.empty:
@@ -161,8 +152,7 @@ else:
                         df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Payment"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
                     df.at[row_to_edit, "Aging Bucket"] = aging_bucket(df.at[row_to_edit, "Days Outstanding"]) if df.at[row_to_edit, "Outstanding"]>0 else "Paid"
                     st.session_state.df = df
-                    df.to_excel(file_name, index=False)  # Auto-save
-                    st.success("✅ Session updated and saved!")
+                    st.success("✅ Session updated!")
 
     # ---------- Display Data ----------
     st.subheader("📋 All Sessions")
@@ -186,9 +176,10 @@ else:
     if not df.empty:
         st.subheader("⬇️ Download Data")
         excel_bytes = export_colored_excel(df)
+        download_filename = f"{clinician.replace(' ','_')}_payroll.xlsx"
         st.download_button(
             label="📥 Download Excel with Colors",
             data=excel_bytes,
-            file_name=file_name,
+            file_name=download_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
