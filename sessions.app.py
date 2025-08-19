@@ -58,7 +58,6 @@ def export_colored_excel(df, file_name="sessions.xlsx"):
                 fill_color = color_map.get(cell.value, None)
                 if fill_color:
                     cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
-    # ✅ No writer.save() needed
 
 # ---------- Input Form ----------
 st.title("📊 Therapy Session Tracker")
@@ -69,12 +68,23 @@ with st.form("session_entry"):
     cpt_code = st.selectbox("CPT Code", ["90837", "90791"])
     session_fee = st.number_input("Session Fee ($)", min_value=0.0, step=10.0)
     payment_received = st.number_input("Payment Received ($)", min_value=0.0, step=10.0)
-    date_of_payment = st.date_input("Date of Payment (leave today if unpaid)", datetime.date.today())
+
+    unpaid = st.checkbox("Unpaid?")
+    if unpaid:
+        date_of_payment = None
+    else:
+        date_of_payment = st.date_input("Date of Payment", datetime.date.today())
+
     submitted = st.form_submit_button("Add Session")
 
 if submitted:
     outstanding = session_fee - payment_received
-    days_outstanding = (datetime.date.today() - date_of_payment).days if outstanding > 0 else 0
+    if unpaid or not date_of_payment:
+        # Calculate days outstanding from Date of Service
+        days_outstanding = (datetime.date.today() - date_of_service).days if outstanding > 0 else 0
+    else:
+        days_outstanding = (datetime.date.today() - date_of_payment).days if outstanding > 0 else 0
+
     bucket = aging_bucket(days_outstanding) if outstanding > 0 else "Paid"
 
     new_row = {
@@ -105,10 +115,16 @@ if not df.empty:
             cpt_edit = st.selectbox("CPT Code", ["90837", "90791"], index=["90837","90791"].index(df.at[row_to_edit,"CPT Code"]))
             fee_edit = st.number_input("Session Fee ($)", min_value=0.0, value=float(df.at[row_to_edit, "Session Fee"]), step=1.0)
             payment_edit = st.number_input("Payment Received ($)", min_value=0.0, value=float(df.at[row_to_edit, "Payment Received"]), step=1.0)
-            date_payment_edit = st.date_input(
-                "Date of Payment (optional)", 
-                value=pd.to_datetime(df.at[row_to_edit, "Date of Payment"]) if not pd.isna(df.at[row_to_edit, "Date of Payment"]) else None
-            )
+            
+            unpaid_edit = st.checkbox("Unpaid?", value=df.at[row_to_edit, "Outstanding"]>0 and pd.isna(df.at[row_to_edit,"Date of Payment"]))
+            if unpaid_edit:
+                date_payment_edit = None
+            else:
+                date_payment_edit = st.date_input(
+                    "Date of Payment (optional)", 
+                    value=pd.to_datetime(df.at[row_to_edit, "Date of Payment"]) if not pd.isna(df.at[row_to_edit, "Date of Payment"]) else datetime.date.today()
+                )
+
             save_edit = st.form_submit_button("Save Changes")
             if save_edit:
                 df.at[row_to_edit, "Client Initials"] = client_edit
@@ -119,7 +135,10 @@ if not df.empty:
                 df.at[row_to_edit, "Date of Payment"] = pd.to_datetime(date_payment_edit) if date_payment_edit else pd.NaT
                 # Recalculate values
                 df.at[row_to_edit, "Outstanding"] = df.at[row_to_edit, "Session Fee"] - df.at[row_to_edit, "Payment Received"]
-                df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Payment"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
+                if unpaid_edit or not date_payment_edit:
+                    df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Service"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
+                else:
+                    df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Payment"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
                 df.at[row_to_edit, "Aging Bucket"] = aging_bucket(df.at[row_to_edit, "Days Outstanding"]) if df.at[row_to_edit, "Outstanding"]>0 else "Paid"
                 st.session_state.df = df
                 export_colored_excel(df)
