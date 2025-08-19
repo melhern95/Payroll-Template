@@ -43,6 +43,15 @@ else:
         ])
     df = st.session_state.df
 
+    # ---------- Clear Sheet ----------
+    st.subheader("🗑️ Clear Sheet")
+    if st.button("Clear All Session Data"):
+        confirm_clear = st.checkbox("Confirm: Delete ALL my session data?")
+        if confirm_clear:
+            st.session_state.df = pd.DataFrame(columns=df.columns)  # reset in-memory df
+            df = st.session_state.df
+            st.success("✅ All session data cleared!")
+
     # ---------- Aging Summary Export Function ----------
     def export_colored_excel(df):
         output = io.BytesIO()
@@ -172,6 +181,13 @@ else:
         summary["Status"] = summary["Aging Bucket"].map(color_map)
         st.table(summary[["Status", "Aging Bucket", "Outstanding"]])
 
+        # ---------- Total Paid / Unpaid ----------
+        st.subheader("💰 Total Paid / Unpaid")
+        total_paid = df[df["Outstanding"] <= 0]["Session Fee"].sum()
+        total_unpaid = df[df["Outstanding"] > 0]["Outstanding"].sum()
+        st.write(f"**Total Paid:** ${total_paid:,.2f}")
+        st.write(f"**Total Unpaid:** ${total_unpaid:,.2f}")
+
     # ---------- Download Excel ----------
     if not df.empty:
         st.subheader("⬇️ Download Data")
@@ -183,3 +199,4 @@ else:
             file_name=download_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
