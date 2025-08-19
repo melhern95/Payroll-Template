@@ -3,21 +3,9 @@ import pandas as pd
 import datetime
 import io
 from openpyxl.styles import PatternFill
-import os
 
 # ---------- Initial Setup ----------
 st.set_page_config(page_title="Therapy Session Tracker", layout="centered")
-
-# ---------- Ask Clinician Name ----------
-st.sidebar.header("👤 Clinician Login")
-clinician_name = st.sidebar.text_input("Enter your name or initials", "")
-
-if clinician_name == "":
-    st.warning("Please enter your name or initials to continue.")
-    st.stop()
-
-# Use clinician-specific filename
-file_name = f"sessions_{clinician_name.replace(' ', '_')}.xlsx"
 
 # ---------- Aging Bucket Function ----------
 def aging_bucket(days):
@@ -30,22 +18,32 @@ def aging_bucket(days):
     else:
         return "90+ days"
 
-# ---------- Load or initialize DataFrame ----------
+# ---------- Initialize in-memory DataFrame in session_state ----------
 if "df" not in st.session_state:
-    if os.path.exists(file_name):
-        st.session_state.df = pd.read_excel(file_name)
-    else:
-        st.session_state.df = pd.DataFrame(columns=[
-            "Client Initials", "Date of Service", "CPT Code", "Session Fee",
-            "Payment Received", "Date of Payment", "Outstanding",
-            "Days Outstanding", "Aging Bucket"
-        ])
+    st.session_state.df = pd.DataFrame(columns=[
+        "Client Initials", "Date of Service", "CPT Code", "Session Fee",
+        "Payment Received", "Date of Payment", "Outstanding",
+        "Days Outstanding", "Aging Bucket"
+    ])
 
 df = st.session_state.df
 
+# ---------- Clear Session Data ----------
+if not df.empty:
+    if st.button("🗑️ Clear All Session Data"):
+        st.session_state.df = pd.DataFrame(columns=df.columns)
+        st.success("✅ All in-browser session data cleared!")
+        st.experimental_rerun()  # Refresh to show empty state
+
+# ---------- Warning if unsaved data exists ----------
+if not df.empty:
+    st.warning("⚠️ You have unsaved session data in this browser session. "
+               "Make sure to download your Excel file before closing or refreshing!")
+
 # ---------- Excel Export with Color ----------
-def export_colored_excel(df, file_name):
-    with pd.ExcelWriter(file_name, engine="openpyxl") as writer:
+def export_colored_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Sessions")
         ws = writer.sheets["Sessions"]
         
@@ -57,11 +55,11 @@ def export_colored_excel(df, file_name):
                 break
         
         color_map = {
-            "Paid": "00C6EFCE",      # light green
-            "0-30 days": "00C6EFCE", # green
-            "31-60 days": "00FFEB9C",# yellow
-            "61-90 days": "00F4B084",# orange
-            "90+ days": "00FF0000"   # red
+            "Paid": "00C6EFCE",
+            "0-30 days": "00C6EFCE",
+            "31-60 days": "00FFEB9C",
+            "61-90 days": "00F4B084",
+            "90+ days": "00FF0000"
         }
         
         if aging_col_idx:
@@ -70,9 +68,11 @@ def export_colored_excel(df, file_name):
                 fill_color = color_map.get(cell.value, None)
                 if fill_color:
                     cell.fill = PatternFill(start_color=fill_color, end_color=fill_color, fill_type="solid")
+    output.seek(0)
+    return output
 
 # ---------- Input Form ----------
-st.title(f"📊 Therapy Session Tracker ({clinician_name})")
+st.title("📊 Therapy Session Tracker (Persistent in-browser)")
 
 with st.form("session_entry"):
     client_initials = st.text_input("Client Initials")
@@ -111,9 +111,8 @@ if submitted:
     }
 
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    st.session_state.df = df
-    export_colored_excel(df, file_name)
-    st.success("✅ Session added and saved!")
+    st.session_state.df = df  # persists in browser session
+    st.success("✅ Session added (in-browser memory)")
 
 # ---------- Edit Existing Session ----------
 if not df.empty:
@@ -124,7 +123,6 @@ if not df.empty:
             client_edit = st.text_input("Client Initials", value=df.at[row_to_edit, "Client Initials"])
             date_edit = st.date_input("Date of Service", value=pd.to_datetime(df.at[row_to_edit, "Date of Service"]))
 
-            # Safe CPT Code selection
             cpt_options = ["90837", "90791"]
             try:
                 default_index = cpt_options.index(df.at[row_to_edit, "CPT Code"])
@@ -144,7 +142,6 @@ if not df.empty:
                     value=pd.to_datetime(df.at[row_to_edit, "Date of Payment"]) if not pd.isna(df.at[row_to_edit, "Date of Payment"]) else datetime.date.today()
                 )
 
-            # Submit button
             save_edit = st.form_submit_button("Save Changes")
 
             if save_edit:
@@ -161,8 +158,7 @@ if not df.empty:
                     df.at[row_to_edit, "Days Outstanding"] = (datetime.date.today() - df.at[row_to_edit, "Date of Payment"].date()).days if df.at[row_to_edit, "Outstanding"]>0 else 0
                 df.at[row_to_edit, "Aging Bucket"] = aging_bucket(df.at[row_to_edit, "Days Outstanding"]) if df.at[row_to_edit, "Outstanding"]>0 else "Paid"
                 st.session_state.df = df
-                export_colored_excel(df, file_name)
-                st.success("✅ Session updated and saved!")
+                st.success("✅ Session updated (in-browser memory)")
 
 # ---------- Ensure proper datetime ----------
 for col in ["Date of Service", "Date of Payment"]:
@@ -188,13 +184,13 @@ if not df.empty:
     st.table(summary[["Status", "Aging Bucket", "Outstanding"]])
 
 # ---------- Download Excel ----------
-st.subheader("⬇️ Download Data")
-export_colored_excel(df, file_name)
-with open(file_name, "rb") as f:
+if not df.empty:
+    st.subheader("⬇️ Download Data")
+    excel_bytes = export_colored_excel(df)
     st.download_button(
         label="📥 Download Excel with Colors",
-        data=f,
-        file_name=file_name,
+        data=excel_bytes,
+        file_name="sessions.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
